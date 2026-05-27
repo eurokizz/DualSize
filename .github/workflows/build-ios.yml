@@ -180,48 +180,51 @@ jobs:
         with:
           name: DualSizeAgent-unsigned-${{ github.sha }}
 
-      # Install zsign for free signing
-      - name: Install zsign
-        run: |
-          brew tap zhlynn/zsign
-          brew install zsign || \
-          (git clone https://github.com/zhlynn/zsign.git && \
-           cd zsign && \
-           make && \
-           sudo cp zsign /usr/local/bin/)
-
       # Setup certificates from secrets
       - name: Setup signing certificate
-        if: ${{ secrets.P12_BASE64 != '' }}
+        env:
+          P12_BASE64: ${{ secrets.P12_BASE64 }}
+          MOBILEPROVISION_BASE64: ${{ secrets.MOBILEPROVISION_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
         run: |
-          echo "${{ secrets.P12_BASE64 }}" | base64 --decode > cert.p12
-          echo "${{ secrets.MOBILEPROVISION_BASE64 }}" | base64 --decode > profile.mobileprovision
-
-          # Import to keychain
+          if [ -z "$P12_BASE64" ]; then
+            echo "::notice::No signing certificate provided, skipping cert setup"
+            exit 0
+          fi
+          echo "$P12_BASE64" | base64 --decode > cert.p12
+          echo "$MOBILEPROVISION_BASE64" | base64 --decode > profile.mobileprovision
           security create-keychain -p "" build.keychain
           security default-keychain -s build.keychain
           security unlock-keychain -p "" build.keychain
-          security import cert.p12 -k build.keychain -P "${{ secrets.P12_PASSWORD }}" -T /usr/bin/codesign
+          security import cert.p12 -k build.keychain -P "$P12_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+          echo "HAS_CERT=true" >> $GITHUB_ENV
 
-      # Sign with personal certificate (if available)
-      - name: Sign IPA with zsign
-        if: ${{ secrets.P12_BASE64 != '' }}
+      # Sign or fake-sign
+      - name: Sign IPA
+        env:
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
         run: |
-          zsign \
-            -k cert.p12 \
-            -p "${{ secrets.P12_PASSWORD }}" \
-            -m profile.mobileprovision \
-            -o DualSizeAgent_signed.ipa \
-            -f \
-            DualSizeAgent_unsigned.ipa
-
-      # Fallback: fake-sign for AltStore/Sideloadly
-      - name: Fake-sign IPA (for AltStore / Sideloadly)
-        if: ${{ secrets.P12_BASE64 == '' }}
-        run: |
-          cp DualSizeAgent_unsigned.ipa DualSizeAgent_signed.ipa
-          echo "Note: IPA is unsigned. Install via AltStore or Sideloadly with your Apple ID."
+          if [ "$HAS_CERT" = "true" ]; then
+            echo "Signing with certificate..."
+            brew tap zhlynn/zsign 2>/dev/null || true
+            brew install zsign 2>/dev/null || (
+              git clone https://github.com/zhlynn/zsign.git zsign_src &&
+              cd zsign_src && make &&
+              sudo cp zsign /usr/local/bin/ &&
+              cd ..
+            )
+            zsign \
+              -k cert.p12 \
+              -p "$P12_PASSWORD" \
+              -m profile.mobileprovision \
+              -o DualSizeAgent_signed.ipa \
+              -f \
+              DualSizeAgent_unsigned.ipa
+          else
+            echo "::notice::No certificate found. Packaging unsigned IPA as signed for AltStore/Sideloadly."
+            cp DualSizeAgent_unsigned.ipa DualSizeAgent_signed.ipa
+          fi
 
       - name: Upload signed IPA
         uses: actions/upload-artifact@v4
