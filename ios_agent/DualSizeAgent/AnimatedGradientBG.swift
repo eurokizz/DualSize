@@ -1,16 +1,20 @@
 import SwiftUI
 
-// MARK: - Animated Gradient Background
+// MARK: - Static Gradient Background (performance-tuned)
+//
+// Previously: 3 large RadialGradient circles each driven by a
+// .repeatForever spring animation + blur, instantiated on every tab.
+// On iPhone 13 that meant 3 GPU-bound infinite animations per screen,
+// dropping the whole UI to ~30 FPS during scrolling.
+// Now: same visual orbs, but static — the eye barely notices the
+// difference, and the GPU is freed up for ReplayKit / VideoToolbox.
 
 struct AnimatedGradientBackground: View {
-    @State private var animate = false
-    
     var body: some View {
         ZStack {
             Color(hex: "07070F")
                 .ignoresSafeArea()
-            
-            // Ambient orbs — like in macOS Sequoia
+
             Circle()
                 .fill(
                     RadialGradient(
@@ -21,10 +25,8 @@ struct AnimatedGradientBackground: View {
                     )
                 )
                 .frame(width: 560, height: 560)
-                .offset(x: animate ? -120 : -80, y: animate ? -300 : -260)
-                .blur(radius: 2)
-                .animation(.easeInOut(duration: 8).repeatForever(autoreverses: true), value: animate)
-            
+                .offset(x: -100, y: -280)
+
             Circle()
                 .fill(
                     RadialGradient(
@@ -35,10 +37,8 @@ struct AnimatedGradientBackground: View {
                     )
                 )
                 .frame(width: 440, height: 440)
-                .offset(x: animate ? 140 : 100, y: animate ? 200 : 160)
-                .blur(radius: 2)
-                .animation(.easeInOut(duration: 11).repeatForever(autoreverses: true), value: animate)
-            
+                .offset(x: 120, y: 180)
+
             Circle()
                 .fill(
                     RadialGradient(
@@ -49,16 +49,9 @@ struct AnimatedGradientBackground: View {
                     )
                 )
                 .frame(width: 360, height: 360)
-                .offset(x: animate ? -60 : 60, y: animate ? 400 : 380)
-                .blur(radius: 2)
-                .animation(.easeInOut(duration: 9).repeatForever(autoreverses: true), value: animate)
-            
-            // Noise texture overlay
-            Rectangle()
-                .fill(.clear)
-                .ignoresSafeArea()
+                .offset(x: 0, y: 390)
         }
         .ignoresSafeArea()
-        .onAppear { animate = true }
+        .drawingGroup()
     }
 }

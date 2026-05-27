@@ -11,32 +11,21 @@ struct GlassCard<Content: View>: View {
     
     var body: some View {
         content()
-            .padding(18)
+            .padding(14)
             .frame(maxWidth: .infinity)
             .background(
                 ZStack {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .fill(.ultraThinMaterial)
-                    
-                    // Inner top highlight
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [.white.opacity(0.07), .clear],
-                                startPoint: .top,
-                                endPoint: .center
-                            )
-                        )
-                    
+
                     // Border
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .strokeBorder(
                             LinearGradient(
                                 colors: [
-                                    .white.opacity(0.20),
-                                    .white.opacity(0.05),
-                                    .clear,
-                                    .white.opacity(0.03)
+                                    .white.opacity(0.18),
+                                    .white.opacity(0.04),
+                                    .clear
                                 ],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
@@ -45,7 +34,6 @@ struct GlassCard<Content: View>: View {
                         )
                 }
             )
-            .shadow(color: .black.opacity(0.25), radius: 16, x: 0, y: 8)
-            .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
+            .shadow(color: .black.opacity(0.22), radius: 10, x: 0, y: 4)
     }
 }

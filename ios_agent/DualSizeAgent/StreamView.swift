@@ -14,41 +14,22 @@ struct StreamView: View {
                 AnimatedGradientBackground()
                 
                 ScrollView {
-                    VStack(spacing: 20) {
-                        
-                        // Main Stream Control
+                    VStack(spacing: 14) {
                         StreamControlCard()
-                            .opacity(appeared ? 1 : 0)
-                            .offset(y: appeared ? 0 : 30)
-                        
-                        // Quality Settings
                         QualitySettingsCard()
-                            .opacity(appeared ? 1 : 0)
-                            .offset(y: appeared ? 0 : 30)
-                            .animation(.spring(response: 0.6).delay(0.1), value: appeared)
-                        
-                        // Advanced Settings
                         AdvancedStreamCard()
-                            .opacity(appeared ? 1 : 0)
-                            .offset(y: appeared ? 0 : 30)
-                            .animation(.spring(response: 0.6).delay(0.15), value: appeared)
-                        
-                        // Stats in real time
                         if streamingManager.isStreaming {
                             StreamStatsCard()
-                                .opacity(appeared ? 1 : 0)
-                                .offset(y: appeared ? 0 : 30)
-                                .animation(.spring(response: 0.6).delay(0.2), value: appeared)
                         }
-                        
-                        Spacer().frame(height: 100)
+                        Spacer().frame(height: 90)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 16)
+                    .padding(.horizontal, 14)
+                    .padding(.top, 8)
+                    .opacity(appeared ? 1 : 0)
                 }
             }
             .navigationTitle("Стриминг")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
         }
         .onAppear {
             withAnimation(.spring(response: 0.6).delay(0.1)) {
@@ -63,39 +44,31 @@ struct StreamView: View {
 struct StreamControlCard: View {
     @EnvironmentObject var streamingManager: StreamingManager
     @EnvironmentObject var connectionManager: ConnectionManager
-    @State private var glowAnimation = false
-    
+
     var body: some View {
         GlassCard {
-            VStack(spacing: 20) {
+            VStack(spacing: 16) {
                 // Status header
                 HStack {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 2) {
                         Text("Трансляция экрана")
-                            .font(.system(size: 13, weight: .medium))
+                            .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(.white.opacity(0.5))
                         Text(streamingManager.isStreaming ? "Активна" : "Остановлена")
-                            .font(.system(size: 22, weight: .bold))
+                            .font(.system(size: 19, weight: .bold))
                             .foregroundStyle(.white)
                     }
                     Spacer()
-                    
-                    // Animated status circle
+
+                    // Static status indicator — no .repeatForever glow loop
                     ZStack {
                         Circle()
                             .fill(streamingManager.isStreaming ? Color(hex: "34C759") : Color(hex: "FF3B30"))
-                            .frame(width: 44, height: 44)
-                            .opacity(0.2)
-                            .scaleEffect(glowAnimation ? 1.4 : 1.0)
-                        
-                        Circle()
-                            .fill(streamingManager.isStreaming ? Color(hex: "34C759") : Color(hex: "FF3B30"))
-                            .frame(width: 44, height: 44)
-                            .opacity(0.1)
-                            .scaleEffect(glowAnimation ? 1.8 : 1.0)
-                        
+                            .frame(width: 40, height: 40)
+                            .opacity(0.18)
+
                         Image(systemName: streamingManager.isStreaming ? "record.circle.fill" : "record.circle")
-                            .font(.system(size: 26))
+                            .font(.system(size: 24))
                             .foregroundStyle(streamingManager.isStreaming ? Color(hex: "34C759") : Color(hex: "FF3B30"))
                     }
                 }
@@ -163,11 +136,6 @@ struct StreamControlCard: View {
                 }
             }
         }
-        .onAppear {
-            withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
-                glowAnimation = true
-            }
-        }
     }
 }
 
@@ -176,7 +144,7 @@ struct StreamControlCard: View {
 struct QualitySettingsCard: View {
     @EnvironmentObject var streamingManager: StreamingManager
     
-    let qualityOptions = ["480p", "720p", "1080p", "Авто"]
+    let qualityOptions = ["480p", "720p", "1080p", "4K", "Авто"]
     let fpsOptions = [30, 60]
     
     var body: some View {

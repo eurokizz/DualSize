@@ -12,15 +12,12 @@ struct MainTabView: View {
             TabView(selection: $selectedTab) {
                 StatusView()
                     .tag(0)
-                
+
                 StreamView()
                     .tag(1)
-                
-                LocationView()
-                    .tag(2)
-                
+
                 SettingsView()
-                    .tag(3)
+                    .tag(2)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .ignoresSafeArea()
@@ -41,7 +38,6 @@ struct CustomTabBar: View {
     let tabs: [TabItem] = [
         TabItem(icon: "dot.radiowaves.left.and.right", label: "Статус", activeIcon: "dot.radiowaves.left.and.right"),
         TabItem(icon: "play.rectangle", label: "Стрим", activeIcon: "play.rectangle.fill"),
-        TabItem(icon: "location", label: "Локация", activeIcon: "location.fill"),
         TabItem(icon: "gearshape", label: "Настройки", activeIcon: "gearshape.fill")
     ]
     
