@@ -2,11 +2,11 @@ name: 🏗️ Build DualSize Agent IPA
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, master, develop ]
     paths:
       - 'ios_agent/**'
   pull_request:
-    branches: [ main ]
+    branches: [ main, master ]
     paths:
       - 'ios_agent/**'
   workflow_dispatch:
@@ -168,7 +168,7 @@ jobs:
     name: ✍️ Sign IPA (AltStore / Sideload)
     runs-on: macos-15
     needs: build
-    if: github.event.inputs.sign_ipa == 'true' || github.ref == 'refs/heads/main'
+    if: github.event.inputs.sign_ipa == 'true' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     timeout-minutes: 20
 
     steps:
@@ -237,7 +237,7 @@ jobs:
     name: 🚀 Create Release
     runs-on: macos-15
     needs: [build, sign]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && github.event_name == 'push'
     timeout-minutes: 10
 
     steps:
