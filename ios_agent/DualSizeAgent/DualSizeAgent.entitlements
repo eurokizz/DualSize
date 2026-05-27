@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Bonjour -->
+	<key>com.apple.developer.networking.multicast</key>
+	<true/>
+	<key>com.apple.developer.networking.networkextension</key>
+	<array>
+		<string>app-proxy-provider</string>
+		<string>content-filter-provider</string>
+		<string>packet-tunnel-provider</string>
+	</array>
+
+	<!-- Local network access without user prompt (requires entitlement review) -->
+	<key>com.apple.developer.networking.wifi-info</key>
+	<true/>
+
+	<!-- Live Activities -->
+	<key>com.apple.developer.live-activity</key>
+	<true/>
+
+	<!-- Push Notifications (for Live Activity updates) -->
+	<key>aps-environment</key>
+	<string>development</string>
+
+	<!-- Background processing -->
+	<key>com.apple.developer.background-tasks.scheduling</key>
+	<array>
+		<string>com.feelarecorp.dualsize.refresh</string>
+		<string>com.feelarecorp.dualsize.stream</string>
+	</array>
+
+	<!-- HotSpot configuration (for direct USB detection) -->
+	<key>com.apple.external-accessory.wireless-configuration</key>
+	<true/>
+</dict>
+</plist>

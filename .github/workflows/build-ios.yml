@@ -1,0 +1,354 @@
+name: 🏗️ Build DualSize Agent IPA
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'ios_agent/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'ios_agent/**'
+  workflow_dispatch:
+    inputs:
+      configuration:
+        description: 'Build configuration'
+        required: true
+        default: 'Release'
+        type: choice
+        options:
+          - Release
+          - Debug
+      sign_ipa:
+        description: 'Sign IPA (requires certificates)'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PROJECT_PATH: ios_agent/DualSizeAgent.xcodeproj
+  SCHEME: DualSizeAgent
+  BUNDLE_ID: com.feelarecorp.dualsize
+  IPA_NAME: DualSizeAgent
+
+jobs:
+  # ─────────────────────────────────────────
+  # Job 1: Lint and validate
+  # ─────────────────────────────────────────
+  lint:
+    name: 🔍 Swift Lint
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install SwiftLint
+        run: brew install swiftlint
+
+      - name: Run SwiftLint
+        run: |
+          cd ios_agent
+          swiftlint --reporter github-actions-logging || true
+
+  # ─────────────────────────────────────────
+  # Job 2: Build (unsigned IPA for sideload)
+  # ─────────────────────────────────────────
+  build:
+    name: 🔨 Build IPA
+    runs-on: macos-15
+    needs: lint
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode version
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.3.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Show build environment
+        run: |
+          echo "=== macOS Version ==="
+          sw_vers
+          echo "=== Xcode Version ==="
+          xcodebuild -version
+          echo "=== Available SDKs ==="
+          xcodebuild -showsdks
+          echo "=== Available Simulators ==="
+          xcrun simctl list devicetypes | grep iPhone | head -10
+
+      - name: Cache DerivedData
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData
+          key: ${{ runner.os }}-deriveddata-${{ hashFiles('ios_agent/**/*.swift') }}
+          restore-keys: |
+            ${{ runner.os }}-deriveddata-
+
+      - name: Cache SPM packages
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-spm-${{ hashFiles('ios_agent/**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      # ── Build for generic device (no signing) ──
+      - name: Build for device (unsigned)
+        run: |
+          xcodebuild \
+            -project ${{ env.PROJECT_PATH }} \
+            -scheme ${{ env.SCHEME }} \
+            -configuration ${{ github.event.inputs.configuration || 'Release' }} \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            ARCHS="arm64" \
+            BUILD_DIR="${{ github.workspace }}/build" \
+            OBJROOT="${{ github.workspace }}/build/Intermediates" \
+            BUILD_ROOT="${{ github.workspace }}/build" \
+            ENABLE_BITCODE=NO \
+            | xcpretty --color --report html --output build_report.html
+          echo "Exit code: $?"
+
+      # ── Package .app into .ipa ──
+      - name: Package .app into unsigned IPA
+        run: |
+          APP_PATH=$(find ${{ github.workspace }}/build -name "*.app" -not -path "*/Intermediates/*" | head -1)
+          echo "Found .app at: $APP_PATH"
+
+          mkdir -p "${{ github.workspace }}/ipa_payload/Payload"
+          cp -R "$APP_PATH" "${{ github.workspace }}/ipa_payload/Payload/"
+
+          cd "${{ github.workspace }}/ipa_payload"
+          zip -r "${{ github.workspace }}/${{ env.IPA_NAME }}_unsigned.ipa" Payload/
+
+          echo "IPA created: ${{ env.IPA_NAME }}_unsigned.ipa"
+          ls -lh "${{ github.workspace }}/${{ env.IPA_NAME }}_unsigned.ipa"
+
+      # ── Show IPA info ──
+      - name: Show IPA contents
+        run: |
+          cd "${{ github.workspace }}"
+          echo "=== IPA File Size ==="
+          ls -lh *.ipa
+          echo "=== IPA Contents ==="
+          unzip -l "${{ env.IPA_NAME }}_unsigned.ipa" | head -30
+
+      # ── Upload artifacts ──
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: DualSizeAgent-unsigned-${{ github.sha }}
+          path: |
+            ${{ github.workspace }}/${{ env.IPA_NAME }}_unsigned.ipa
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload build report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-report-${{ github.sha }}
+          path: build_report.html
+          retention-days: 7
+
+  # ─────────────────────────────────────────
+  # Job 3: Signed IPA (optional, with secrets)
+  # ─────────────────────────────────────────
+  sign:
+    name: ✍️ Sign IPA (AltStore / Sideload)
+    runs-on: macos-15
+    needs: build
+    if: github.event.inputs.sign_ipa == 'true' || github.ref == 'refs/heads/main'
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download unsigned IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: DualSizeAgent-unsigned-${{ github.sha }}
+
+      # Install zsign for free signing
+      - name: Install zsign
+        run: |
+          brew tap zhlynn/zsign
+          brew install zsign || \
+          (git clone https://github.com/zhlynn/zsign.git && \
+           cd zsign && \
+           make && \
+           sudo cp zsign /usr/local/bin/)
+
+      # Setup certificates from secrets
+      - name: Setup signing certificate
+        if: ${{ secrets.P12_BASE64 != '' }}
+        run: |
+          echo "${{ secrets.P12_BASE64 }}" | base64 --decode > cert.p12
+          echo "${{ secrets.MOBILEPROVISION_BASE64 }}" | base64 --decode > profile.mobileprovision
+
+          # Import to keychain
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security import cert.p12 -k build.keychain -P "${{ secrets.P12_PASSWORD }}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+
+      # Sign with personal certificate (if available)
+      - name: Sign IPA with zsign
+        if: ${{ secrets.P12_BASE64 != '' }}
+        run: |
+          zsign \
+            -k cert.p12 \
+            -p "${{ secrets.P12_PASSWORD }}" \
+            -m profile.mobileprovision \
+            -o DualSizeAgent_signed.ipa \
+            -f \
+            DualSizeAgent_unsigned.ipa
+
+      # Fallback: fake-sign for AltStore/Sideloadly
+      - name: Fake-sign IPA (for AltStore / Sideloadly)
+        if: ${{ secrets.P12_BASE64 == '' }}
+        run: |
+          cp DualSizeAgent_unsigned.ipa DualSizeAgent_signed.ipa
+          echo "Note: IPA is unsigned. Install via AltStore or Sideloadly with your Apple ID."
+
+      - name: Upload signed IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: DualSizeAgent-signed-${{ github.sha }}
+          path: DualSizeAgent_signed.ipa
+          retention-days: 90
+
+  # ─────────────────────────────────────────
+  # Job 4: Create GitHub Release
+  # ─────────────────────────────────────────
+  release:
+    name: 🚀 Create Release
+    runs-on: macos-15
+    needs: [build, sign]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download unsigned IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: DualSizeAgent-unsigned-${{ github.sha }}
+
+      - name: Download signed IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: DualSizeAgent-signed-${{ github.sha }}
+        continue-on-error: true
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(grep -m1 "MARKETING_VERSION" ios_agent/DualSizeAgent.xcodeproj/project.pbxproj | awk '{print $3}' | tr -d ';')
+          BUILD=$(grep -m1 "CURRENT_PROJECT_VERSION" ios_agent/DualSizeAgent.xcodeproj/project.pbxproj | awk '{print $3}' | tr -d ';')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "build=$BUILD" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION.$BUILD" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "DualSize Agent ${{ steps.version.outputs.tag }}"
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## DualSize Agent ${{ steps.version.outputs.tag }}
+
+            **iOS Screen Mirroring Agent by FL-corp.ltd**
+
+            ### Установка
+
+            #### Вариант 1: AltStore / AltServer
+            1. Скачайте `DualSizeAgent_unsigned.ipa`
+            2. Откройте AltStore на iPhone
+            3. Нажмите **+** → выберите IPA файл
+            4. Подпишите своим Apple ID
+
+            #### Вариант 2: Sideloadly
+            1. Скачайте и запустите [Sideloadly](https://sideloadly.io)
+            2. Перетащите `DualSizeAgent_unsigned.ipa`
+            3. Введите свой Apple ID
+            4. Нажмите Start
+
+            #### Вариант 3: TrollStore (iOS 14-16.6.1)
+            1. Скачайте `DualSizeAgent_unsigned.ipa`
+            2. В TrollStore нажмите Install IPA
+
+            ### Что нового в ${{ steps.version.outputs.tag }}
+            - Полный рефакторинг с iOS 26 Liquid Glass дизайном
+            - Live Activity в Dynamic Island
+            - GPS Spoofing с симуляцией маршрутов
+            - Контекстные панели управления для 20+ приложений
+            - Hardware H.265 энкодер через VideoToolbox
+
+            ---
+            *© 2023–2026 FL-corp.ltd · MIT License*
+
+          files: |
+            DualSizeAgent_unsigned.ipa
+            DualSizeAgent_signed.ipa
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─────────────────────────────────────────
+  # Job 5: Simulator build for testing
+  # ─────────────────────────────────────────
+  test-simulator:
+    name: 🧪 Test on Simulator
+    runs-on: macos-15
+    needs: lint
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.3.app/Contents/Developer
+
+      - name: Boot simulator
+        run: |
+          DEVICE_ID=$(xcrun simctl list devices available | grep "iPhone 16 Pro" | head -1 | grep -oE '[0-9A-F-]{36}')
+          echo "DEVICE_ID=$DEVICE_ID" >> $GITHUB_ENV
+          xcrun simctl boot "$DEVICE_ID" || true
+
+      - name: Build for simulator
+        run: |
+          xcodebuild \
+            -project ${{ env.PROJECT_PATH }} \
+            -scheme ${{ env.SCHEME }} \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination "id=$DEVICE_ID" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            ARCHS="arm64" \
+            build \
+            | xcpretty
+
+      - name: Shutdown simulator
+        if: always()
+        run: xcrun simctl shutdown "$DEVICE_ID" || true
