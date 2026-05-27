@@ -102,54 +102,93 @@ jobs:
       # ── Build for generic device (no signing) ──
       - name: Build for device (unsigned)
         run: |
+          set -o pipefail
+          DERIVED_DATA_PATH="${{ github.workspace }}/DerivedData"
+
           xcodebuild \
             -project ${{ env.PROJECT_PATH }} \
             -scheme ${{ env.SCHEME }} \
             -configuration ${{ github.event.inputs.configuration || 'Release' }} \
             -sdk iphoneos \
             -destination "generic/platform=iOS" \
+            -derivedDataPath "$DERIVED_DATA_PATH" \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             ARCHS="arm64" \
-            BUILD_DIR="${{ github.workspace }}/build" \
-            OBJROOT="${{ github.workspace }}/build/Intermediates" \
-            BUILD_ROOT="${{ github.workspace }}/build" \
             ENABLE_BITCODE=NO \
-            | xcpretty --color --report html --output build_report.html
-          echo "Exit code: $?"
+            clean build \
+            2>&1 | tee build.log | xcpretty --color || {
+              echo "::error::xcodebuild failed — last 50 lines:"
+              tail -50 build.log
+              exit 1
+            }
+
+          echo "DERIVED_DATA_PATH=$DERIVED_DATA_PATH" >> $GITHUB_ENV
+
+      # ── Locate .app ──
+      - name: Locate built .app
+        run: |
+          echo "=== Searching for .app in DerivedData ==="
+          find "$DERIVED_DATA_PATH" -name "*.app" -not -path "*/Intermediates/*" -not -path "*iphonesimulator*" 2>/dev/null || true
+
+          APP_PATH=$(find "$DERIVED_DATA_PATH" \
+            -name "DualSizeAgent.app" \
+            -not -path "*/Intermediates/*" \
+            -not -path "*iphonesimulator*" \
+            2>/dev/null | head -1)
+
+          if [ -z "$APP_PATH" ]; then
+            # Fallback: any .app for iphoneos
+            APP_PATH=$(find "$DERIVED_DATA_PATH" \
+              -name "*.app" \
+              -path "*iphoneos*" \
+              -not -path "*/Intermediates/*" \
+              2>/dev/null | head -1)
+          fi
+
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::Could not find .app bundle!"
+            echo "=== DerivedData structure ==="
+            find "$DERIVED_DATA_PATH" -maxdepth 6 -type d | head -30
+            exit 1
+          fi
+
+          echo "Found .app: $APP_PATH"
+          echo "APP_PATH=$APP_PATH" >> $GITHUB_ENV
 
       # ── Package .app into .ipa ──
       - name: Package .app into unsigned IPA
         run: |
-          APP_PATH=$(find ${{ github.workspace }}/build -name "*.app" -not -path "*/Intermediates/*" | head -1)
-          echo "Found .app at: $APP_PATH"
+          echo "Packaging: $APP_PATH"
 
-          mkdir -p "${{ github.workspace }}/ipa_payload/Payload"
-          cp -R "$APP_PATH" "${{ github.workspace }}/ipa_payload/Payload/"
+          PAYLOAD_DIR="${{ github.workspace }}/Payload"
+          IPA_PATH="${{ github.workspace }}/${{ env.IPA_NAME }}_unsigned.ipa"
 
-          cd "${{ github.workspace }}/ipa_payload"
-          zip -r "${{ github.workspace }}/${{ env.IPA_NAME }}_unsigned.ipa" Payload/
+          mkdir -p "$PAYLOAD_DIR"
+          cp -R "$APP_PATH" "$PAYLOAD_DIR/"
 
-          echo "IPA created: ${{ env.IPA_NAME }}_unsigned.ipa"
-          ls -lh "${{ github.workspace }}/${{ env.IPA_NAME }}_unsigned.ipa"
-
-      # ── Show IPA info ──
-      - name: Show IPA contents
-        run: |
           cd "${{ github.workspace }}"
-          echo "=== IPA File Size ==="
-          ls -lh *.ipa
-          echo "=== IPA Contents ==="
-          unzip -l "${{ env.IPA_NAME }}_unsigned.ipa" | head -30
+          zip -r "$IPA_PATH" Payload/
+          rm -rf Payload/
+
+          echo "=== IPA created ==="
+          ls -lh "$IPA_PATH"
+          echo "=== Contents ==="
+          unzip -l "$IPA_PATH" | head -20
+
+      # ── Generate build report ──
+      - name: Generate build report
+        if: always()
+        run: |
+          xcpretty --color < build.log > build_report.html 2>/dev/null || cp build.log build_report.html
 
       # ── Upload artifacts ──
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
           name: DualSizeAgent-unsigned-${{ github.sha }}
-          path: |
-            ${{ github.workspace }}/${{ env.IPA_NAME }}_unsigned.ipa
+          path: ${{ github.workspace }}/${{ env.IPA_NAME }}_unsigned.ipa
           retention-days: 30
           if-no-files-found: error
 
