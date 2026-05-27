@@ -4,35 +4,35 @@ import UIKit
 
 final class HapticManager: ObservableObject {
     static let shared = HapticManager()
-    
-    private let impact = [
-        UIImpactFeedbackGenerator.FeedbackStyle.light:   UIImpactFeedbackGenerator(style: .light),
-        UIImpactFeedbackGenerator.FeedbackStyle.medium:  UIImpactFeedbackGenerator(style: .medium),
-        UIImpactFeedbackGenerator.FeedbackStyle.heavy:   UIImpactFeedbackGenerator(style: .heavy),
-        UIImpactFeedbackGenerator.FeedbackStyle.soft:    UIImpactFeedbackGenerator(style: .soft),
-        UIImpactFeedbackGenerator.FeedbackStyle.rigid:   UIImpactFeedbackGenerator(style: .rigid),
+
+    private let impactGenerators: [UIImpactFeedbackGenerator.FeedbackStyle: UIImpactFeedbackGenerator] = [
+        .light:  UIImpactFeedbackGenerator(style: .light),
+        .medium: UIImpactFeedbackGenerator(style: .medium),
+        .heavy:  UIImpactFeedbackGenerator(style: .heavy),
+        .soft:   UIImpactFeedbackGenerator(style: .soft),
+        .rigid:  UIImpactFeedbackGenerator(style: .rigid),
     ]
-    private let notification = UINotificationFeedbackGenerator()
-    private let selection    = UISelectionFeedbackGenerator()
-    
+    private let notificationGenerator = UINotificationFeedbackGenerator()
+    private let selectionGenerator    = UISelectionFeedbackGenerator()
+
     private init() {
-        impact.values.forEach { $0.prepare() }
-        notification.prepare()
-        selection.prepare()
+        impactGenerators.values.forEach { $0.prepare() }
+        notificationGenerator.prepare()
+        selectionGenerator.prepare()
     }
-    
+
     func impact(style: UIImpactFeedbackGenerator.FeedbackStyle) {
         guard UserDefaults.standard.bool(forKey: "hapticEnabled") != false else { return }
-        impact[style]?.impactOccurred()
+        impactGenerators[style]?.impactOccurred()
     }
-    
+
     func notification(type: UINotificationFeedbackGenerator.FeedbackType) {
         guard UserDefaults.standard.bool(forKey: "hapticEnabled") != false else { return }
-        notification.notificationOccurred(type)
+        notificationGenerator.notificationOccurred(type)
     }
-    
+
     func selection() {
         guard UserDefaults.standard.bool(forKey: "hapticEnabled") != false else { return }
-        selection.selectionChanged()
+        selectionGenerator.selectionChanged()
     }
 }

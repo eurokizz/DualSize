@@ -95,7 +95,7 @@ final class DynamicIslandActivity: ObservableObject {
     func stop() {
         guard #available(iOS 16.2, *) else { return }
         Task {
-            await activity?.end(.dismissed)
+            await activity?.end(nil, dismissalPolicy: .immediate)
         }
     }
 }

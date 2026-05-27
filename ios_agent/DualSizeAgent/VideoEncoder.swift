@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import VideoToolbox
 import CoreMedia
 
@@ -59,8 +60,10 @@ final class VideoEncoder {
                                 : kVTProfileLevel_H264_High_AutoLevel)
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxKeyFrameInterval, value: fps * 2 as CFNumber)
         
-        // Hardware acceleration
-        VTSessionSetProperty(session, key: kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder, value: kCFBooleanTrue)
+        // Hardware acceleration (iOS 17.4+)
+        if #available(iOS 17.4, *) {
+            VTSessionSetProperty(session, key: kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder, value: kCFBooleanTrue)
+        }
         
         VTCompressionSessionPrepareToEncodeFrames(session)
     }
