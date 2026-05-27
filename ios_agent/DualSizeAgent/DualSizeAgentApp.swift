@@ -7,7 +7,7 @@ struct DualSizeAgentApp: App {
     @StateObject private var streamingManager = StreamingManager()
     @StateObject private var motionTracker = MotionTracker()
     @StateObject private var batteryMonitor = BatteryMonitor()
-    @StateObject private var hapticManager = HapticManager()
+    @StateObject private var hapticManager = HapticManager.shared
     
     init() {
         configureAppearance()
